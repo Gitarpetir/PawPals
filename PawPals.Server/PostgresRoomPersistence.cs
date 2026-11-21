@@ -143,6 +143,18 @@ public sealed class PostgresRoomPersistence : IRoomPersistence, IDisposable
     }
     private static void EnsureSchema(NpgsqlConnection connection)
     {
+        // Hosting uses a pre-provisioned catalog owned by an admin role.
+        // The runtime role needs SELECT + column UPDATE only, never CREATE/INSERT/DELETE.
+        using (var exists = new NpgsqlCommand("SELECT to_regclass('public.pawpals_room_catalog') IS NOT NULL", connection))
+        {
+            if ((bool)exists.ExecuteScalar()!)
+            {
+                using var seeded = new NpgsqlCommand("SELECT EXISTS (SELECT 1 FROM public.pawpals_room_catalog WHERE id=1)", connection);
+                if ((bool)seeded.ExecuteScalar()!) return;
+            }
+        }
+        // Admin/local bootstrap remains supported; a restricted runtime fails safely
+        // if its catalog was removed or was not provisioned before deployment.
         using var command = new NpgsqlCommand("""
             CREATE TABLE IF NOT EXISTS pawpals_room_catalog (
                 id integer PRIMARY KEY CHECK (id=1),
